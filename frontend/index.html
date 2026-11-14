@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SignBridge AI — Hackathon Prototype</title>
+<link rel="stylesheet" href="style.css" />
+<!--
+  Hand-landmark detection runs in the browser via MediaPipe Hands JS, not
+  on the backend (see backend/app/landmarks.py for why). These scripts and
+  the model files they fetch need a normal internet connection on whatever
+  machine this page is opened on.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">SignBridge <span class="accent">AI</span></div>
+  <div class="tagline">Hackathon prototype · ISL sign recognition · speech ⇄ text</div>
+</header>
+
+<main class="layout">
+
+  <section class="panel camera-panel">
+    <h2>Camera</h2>
+    <div class="video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="camera-controls">
+      <button id="startCamera" class="btn primary">Start camera</button>
+      <button id="stopCamera" class="btn" disabled>Stop camera</button>
+    </div>
+    <p class="hint" id="cameraHint">Camera and microphone start only after you choose to turn them on.</p>
+  </section>
+
+  <section class="panel">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="recognize">Live recognition</button>
+      <button class="tab-btn" data-tab="enroll">Enroll a sign</button>
+      <button class="tab-btn" data-tab="speech">Speech ⇄ text</button>
+    </div>
+
+    <!-- RECOGNIZE TAB -->
+    <div class="tab-panel active" id="tab-recognize">
+      <p class="muted">
+        Recognizes only the small vocabulary enrolled below. A prediction is
+        never shown as final when confidence is low — you'll be asked to
+        confirm it instead.
+      </p>
+      <div class="controls-row">
+        <button id="toggleRecognition" class="btn primary" disabled>Start recognizing</button>
+        <label class="inline-label">
+          <input type="checkbox" id="speakPrediction" checked />
+          Speak confirmed predictions aloud
+        </label>
+      </div>
+
+      <div id="predictionBox" class="prediction-box idle">
+        <div class="prediction-label">—</div>
+        <div class="prediction-meta"></div>
+      </div>
+
+      <div id="confirmBox" class="confirm-box hidden">
+        <p>Please confirm: is this correct?</p>
+        <div class="confirm-row">
+          <span id="confirmLabel" class="confirm-label"></span>
+          <button id="confirmYes" class="btn small">Yes, correct</button>
+          <button id="confirmNo" class="btn small ghost">No, let me pick</button>
+        </div>
+        <div id="correctPicker" class="hidden"></div>
+        <label class="inline-label small">
+          <input type="checkbox" id="feedbackConsent" />
+          I consent to this correction being stored to improve the model
+        </label>
+      </div>
+
+      <div class="phrase-shortcuts">
+        <h3>Phrase shortcuts</h3>
+        <div class="chip-row">
+          <button class="chip" data-phrase="Hello">Hello</button>
+          <button class="chip" data-phrase="Thank you">Thank you</button>
+          <button class="chip" data-phrase="Please">Please</button>
+          <button class="chip" data-phrase="I need help">I need help</button>
+          <button class="chip" data-phrase="Where is the restroom?">Where is the restroom?</button>
+          <button class="chip" data-phrase="Please wait a moment">Please wait a moment</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ENROLL TAB -->
+    <div class="tab-panel" id="tab-enroll">
+      <p class="muted">
+        Record a few examples per sign so the recognizer learns your small
+        vocabulary. At least <strong>3 examples for at least 2 labels</strong>
+        are needed before live recognition turns on.
+      </p>
+      <div class="enroll-form">
+        <input id="enrollLabel" type="text" placeholder="Sign label, e.g. hello" />
+        <button id="captureEnroll" class="btn primary" disabled>Capture example</button>
+        <button id="refreshVocab" class="btn ghost">Refresh status</button>
+      </div>
+      <p id="enrollStatus" class="hint"></p>
+      <table class="vocab-table">
+        <thead><tr><th>Label</th><th>Examples</th></tr></thead>
+        <tbody id="vocabTableBody"></tbody>
+      </table>
+      <button id="resetAll" class="btn danger">Delete all enrolled data</button>
+    </div>
+
+    <!-- SPEECH TAB -->
+    <div class="tab-panel" id="tab-speech">
+      <div class="speech-grid">
+        <div class="speech-col">
+          <h3>Text / sign → Speech</h3>
+          <textarea id="ttsText" placeholder="Type or confirm a message here…"></textarea>
+          <button id="speakText" class="btn primary">Speak aloud</button>
+        </div>
+        <div class="speech-col">
+          <h3>Speech → Captions</h3>
+          <button id="toggleStt" class="btn primary">Start listening</button>
+          <div id="captionBox" class="caption-box">Captions will appear here…</div>
+        </div>
+      </div>
+      <p class="hint">Uses your browser's built-in speech APIs (Web Speech API). No audio is sent to the server.</p>
+    </div>
+
+  </section>
+</main>
+
+<footer class="app-footer">
+  SignBridge AI — hackathon prototype. Not a certified interpreter replacement. See /data-docs for scope and consent notes.
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

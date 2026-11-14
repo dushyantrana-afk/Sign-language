@@ -1,4 +1,23 @@
-# ML model — future extension path
+# ML model — bulk import and future extension path
+
+## Adding a real ISL vocabulary now: `import_dataset.py`
+
+The fastest real upgrade from "enroll one sign at a time in the browser"
+to "ships with an actual ISL vocabulary" is **not** a new model — it's
+bulk-populating the existing KNN classifier from a real dataset. Run:
+
+```bash
+python ml-model/import_dataset.py /path/to/dataset_dir
+```
+
+where `dataset_dir` is laid out as `<label>/<clip-or-image file>` (see the
+script's docstring for details and options). It runs server-side hand
+detection on every file and writes the resulting examples into
+`backend/data/classifier_state.json` — the same file the live app reads —
+so the app has real recognizable signs the moment it starts, no live
+enrollment required. See `/data-docs/dataset-notes.md` for candidate ISL
+datasets to point this at (none are bundled in this repo — check licenses
+first) and for why this needs the *server-side* detection path specifically.
 
 ## What exists today
 

@@ -34,6 +34,20 @@
       <button id="stopCamera" class="btn" disabled>Stop camera</button>
     </div>
     <p class="hint" id="cameraHint">Camera and microphone start only after you choose to turn them on.</p>
+
+    <div class="detection-mode">
+      <label class="inline-label small">
+        <input type="checkbox" id="useServerDetection" />
+        Detect hands on the server instead of in-browser
+      </label>
+      <p class="hint" id="detectionModeHint">
+        Default: detection runs in your browser and only landmark points are
+        sent to the backend (no video leaves this device). Server-side mode
+        sends camera frames to the backend instead — useful if this browser
+        can't load the hand-tracking library, but it does send images over
+        the network.
+      </p>
+    </div>
   </section>
 
   <section class="panel">

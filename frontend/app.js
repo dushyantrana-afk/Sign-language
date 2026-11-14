@@ -1,14 +1,16 @@
 // SignBridge AI — frontend logic (hackathon MVP)
 //
-// Hand-landmark detection runs HERE in the browser, via the MediaPipe
-// Hands JS solution loaded in index.html — not on the backend. See
-// backend/app/landmarks.py's module docstring for why. This file turns
-// each detected frame into the small JSON shape the backend expects
-// ({"hands": [{"label": "Right", "landmarks": [[x,y,z], ...21]}]}) and
-// posts that — never a raw image — to /api/enroll and /api/predict.
+// Hand-landmark detection runs HERE in the browser by default, via the
+// MediaPipe Hands JS solution loaded in index.html, turning each frame
+// into landmark JSON ({"hands": [{"label": "Right", "landmarks": [[x,y,z],
+// ...21]}]}) sent to /api/enroll and /api/predict -- no video leaves the
+// device in this mode. The "Detect hands on the server" checkbox switches
+// to sending a raw frame ({"image": "data:..."}) instead, for the optional
+// server-side detection path in backend/app/landmarks.py -- see that
+// module's docstring and currentCapturePayload() below.
 //
 // Text<->speech uses the browser's own Web Speech API; no audio is ever
-// sent to the server.
+// sent to the server, in either detection mode.
 
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
@@ -21,6 +23,21 @@ let mediaStream = null;
 let mpCamera = null; // MediaPipe's Camera helper (wraps getUserMedia + a render loop)
 let handsModel = null;
 let latestHandsResult = null; // most recent MediaPipe Hands onResults() payload
+let handsModelLoadFailed = false;
+
+const useServerDetectionCheckbox = document.getElementById("useServerDetection");
+const detectionModeHint = document.getElementById("detectionModeHint");
+
+// Check once at load whether the backend can even attempt server-side
+// detection (it may still fail per-request, e.g. no internet to fetch the
+// model -- /api/predict and /api/enroll report that per-call).
+apiGet("/api/capabilities").then((caps) => {
+  if (!caps.server_side_detection_importable) {
+    useServerDetectionCheckbox.disabled = true;
+    detectionModeHint.textContent =
+      "This backend's mediapipe install doesn't support server-side detection — browser-side only.";
+  }
+});
 
 // ---------- Tabs ----------
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -32,19 +49,30 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
   });
 });
 
-// ---------- MediaPipe Hands setup ----------
+// ---------- MediaPipe Hands setup (browser-side detection) ----------
 function ensureHandsModel() {
-  if (handsModel || typeof Hands === "undefined") return;
-  handsModel = new Hands({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-  });
-  handsModel.setOptions({
-    maxNumHands: 2,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5,
-  });
-  handsModel.onResults(onHandsResults);
+  if (handsModel) return true;
+  if (typeof Hands === "undefined") {
+    handsModelLoadFailed = true;
+    return false;
+  }
+  try {
+    handsModel = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+    });
+    handsModel.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    handsModel.onResults(onHandsResults);
+    return true;
+  } catch (err) {
+    handsModelLoadFailed = true;
+    handsModel = null;
+    return false;
+  }
 }
 
 function onHandsResults(results) {
@@ -69,24 +97,40 @@ function drawOverlay(results) {
 // ---------- Camera (starts only when the user chooses) ----------
 async function startCamera() {
   try {
-    ensureHandsModel();
-    if (!handsModel) {
-      cameraHint.textContent =
-        "Hand-tracking library failed to load (check your internet connection) — camera cannot start.";
-      return;
+    const browserDetectionReady = ensureHandsModel();
+    if (!browserDetectionReady && !useServerDetectionCheckbox.checked) {
+      if (!useServerDetectionCheckbox.disabled) {
+        // Hand-tracking library didn't load (e.g. CDN unreachable) but the
+        // backend can do server-side detection -- fall back automatically
+        // instead of just failing.
+        useServerDetectionCheckbox.checked = true;
+        detectionModeHint.textContent =
+          "Browser hand-tracking library failed to load — switched to server-side detection automatically.";
+      } else {
+        cameraHint.textContent =
+          "Hand-tracking library failed to load (check your internet connection) and this backend has no server-side fallback available — camera cannot start.";
+        return;
+      }
     }
+
     mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     video.srcObject = mediaStream;
     await video.play();
 
-    mpCamera = new Camera(video, {
-      onFrame: async () => {
-        await handsModel.send({ image: video });
-      },
-      width: 640,
-      height: 480,
-    });
-    mpCamera.start();
+    if (browserDetectionReady) {
+      mpCamera = new Camera(video, {
+        onFrame: async () => {
+          await handsModel.send({ image: video });
+        },
+        width: 640,
+        height: 480,
+      });
+      mpCamera.start();
+    } else {
+      // No in-browser model running: just keep the <video> playing so
+      // captureFrameDataUrl() has frames to grab for server-side mode.
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    }
 
     startCameraBtn.disabled = true;
     stopCameraBtn.disabled = false;
@@ -96,6 +140,25 @@ async function startCamera() {
   } catch (err) {
     cameraHint.textContent = "Could not access the camera: " + err.message;
   }
+}
+
+function captureFrameDataUrl(quality = 0.7) {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+/** The payload to send to /api/enroll or /api/predict for the current
+ * frame, honoring the detection-mode toggle. Returns null if there's
+ * nothing to send yet (browser mode with no detection result so far). */
+function currentCapturePayload() {
+  if (useServerDetectionCheckbox.checked) {
+    return { image: captureFrameDataUrl() };
+  }
+  return { hands: handsPayloadFromLatestResult() };
 }
 
 function stopCamera() {
@@ -169,13 +232,13 @@ captureEnrollBtn.addEventListener("click", async () => {
     enrollStatus.textContent = "Enter a label first (e.g. 'hello').";
     return;
   }
-  const hands = handsPayloadFromLatestResult();
-  if (hands.length === 0) {
+  const payload = currentCapturePayload();
+  if (payload.hands && payload.hands.length === 0) {
     enrollStatus.textContent = "No hand detected — make sure your hand is visible and well lit.";
     return;
   }
   enrollStatus.textContent = "Capturing…";
-  const result = await apiPost("/api/enroll", { label, hands });
+  const result = await apiPost("/api/enroll", { label, ...payload });
   if (result.error) {
     enrollStatus.textContent = "Error: " + result.error;
     return;
@@ -216,9 +279,9 @@ function setPredictionDisplay(state, label, meta) {
 
 async function recognitionTick() {
   if (!recognizing) return;
-  const hands = handsPayloadFromLatestResult();
+  const payload = currentCapturePayload();
   try {
-    const result = await apiPost("/api/predict", { hands });
+    const result = await apiPost("/api/predict", payload);
     if (result.reason === "no_hand_detected") {
       setPredictionDisplay("idle", "—", "No hand detected");
       confirmBox.classList.add("hidden");

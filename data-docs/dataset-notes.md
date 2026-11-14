@@ -20,19 +20,75 @@ This is an honest trade-off, not a shortcut:
   This is *expected* for the hackathon MVP stage and should be stated
   plainly in any demo, not glossed over.
 
-## Upgrade path, if/when a real dataset is available
+## Adding an ISL "library" (a real starter vocabulary)
 
-If the team gets access to a properly licensed or newly collected
-(consented, signer-diverse) ISL dataset, `/ml-model/train_classifier.py`
-shows how to train a signer-generalizing classifier offline from exported
-landmark vectors, replacing the per-session KNN model. See
-`/ml-model/README.md`.
+Two separate upgrades, and it's worth not conflating them:
 
-Known public sign-language datasets exist (e.g. for ASL and a few other
-sign languages); as of this writing the team has not identified and
-licensed an ISL-specific dataset suitable for this project. **Do not claim
-an ISL dataset has been secured until one is, with its license checked and
-recorded here.**
+1. **Bulk-populate the existing per-session KNN model** with a real
+   vocabulary, so the app ships with signs already enrolled instead of
+   needing live enrollment every run. Use `/ml-model/import_dataset.py`:
+   point it at a folder of `<label>/<clip-or-image>` files (from a
+   licensed dataset you've downloaded, or your own consented recordings)
+   and it runs server-side hand-landmark detection on each file and
+   writes the resulting examples straight into
+   `backend/data/classifier_state.json` — the exact file the live app
+   reads. This needs the optional server-side detection path (see
+   [Landmark detection: client vs. server](#landmark-detection-client-vs-server)
+   below) and, once, outbound internet to fetch the detection model.
+2. **Train a signer-generalizing sequence model** instead of KNN, once
+   there's enough data — that's `/ml-model/train_classifier.py` /
+   `/ml-model/README.md`, a bigger undertaking than (1).
+
+Start with (1); it's the realistic "add an ISL library" step for now.
+
+### Candidate ISL datasets (not bundled here — check license before use)
+
+No ISL dataset ships with this repo. If you want to populate the app with
+real ISL vocabulary via `import_dataset.py`, these are publicly referenced
+ISL datasets to look into — **check each one's actual license and terms
+yourself before use; this list is a starting point for research, not a
+license clearance:**
+
+- **INCLUDE** (AI4Bharat / IIT Madras, with IIIT-B) — isolated-sign ISL
+  video dataset, ~4,287 videos across 263 signs from multiple signers.
+  Look up current access terms from AI4Bharat before use.
+- **ISL-CSLTR** — an Indian Sign Language continuous/isolated dataset
+  referenced in ISL research literature.
+- **INCLUDE-50** — a smaller subset of INCLUDE, useful for a first
+  small-vocabulary pass matching this MVP's "10-20 signs" scope (deck
+  slide 14).
+
+For each: confirm the license permits this project's intended use
+(a hackathon demo vs. anything resembling a product), record the dataset
+name, version/date, and license terms **here** once one is actually
+selected, and keep that record up to date — per `/data-docs/vocabulary.md`
+and the deck's own "document dataset source and consent" requirement.
+**Do not claim an ISL dataset has been secured until one is**, with its
+license checked and recorded in this file.
+
+## Landmark detection: client vs. server
+
+`backend/app/landmarks.py` supports two ways to get from a camera frame to
+hand landmarks:
+
+- **Browser-side (the live app's default)** — MediaPipe Hands JS runs in
+  the user's browser; only landmark coordinates are sent to the backend.
+  No dataset tool needed; this is what `frontend/app.js` uses day-to-day.
+- **Server-side (optional, used by `import_dataset.py` and available as a
+  toggle in the live app)** — `HandLandmarkExtractor` runs MediaPipe's
+  Tasks API on a frame/image file directly. This is **required** for bulk
+  dataset import, since there's no browser in that loop.
+
+Server-side detection downloads a small (~8MB) model file from Google's
+MediaPipe model hosting the first time it's used, caching it under
+`backend/models/`. That download needs a normal internet connection on
+whichever machine runs the backend or the import script — confirmed
+unavailable in the sandbox this project was originally built in (that
+network blocks `storage.googleapis.com`), but this is a sandbox-specific
+limitation, not a design flaw: a normal laptop or server will not have the
+same restriction. If you hit a `server_side_detection_unavailable` error,
+it means that *specific machine* can't reach the model host right now —
+see the error message for the exact URL and directory involved.
 
 ## Data this app itself generates
 

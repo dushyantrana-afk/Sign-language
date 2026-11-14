@@ -9,4 +9,9 @@ venv/
 # generated at runtime -- never commit them (see /data-docs/consent.md).
 backend/data/*.json
 
+# Downloaded MediaPipe model asset (cached on first server-side-detection
+# use; large binary, re-downloadable, never hand-edited) -- see
+# backend/app/landmarks.py.
+backend/models/*.task
+
 .DS_Store

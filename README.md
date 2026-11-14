@@ -18,9 +18,9 @@ language or every conversation."
 | Phrase shortcuts | ✅ |
 | Correction & feedback, stored only with consent | ✅ |
 | User confirmation before trusting a low-confidence prediction | ✅ — see `needs_confirmation` |
-| On-device/offline inference | ⚠️ partial — hand detection runs in-browser (on-device); classification is a local backend call, not cloud |
+| On-device/offline inference | ⚠️ partial — hand detection runs in-browser by default (on-device); classification is a local backend call, not cloud. An optional server-side detection mode also exists — see below |
 | Sign-language avatar output | ❌ listed in the deck as a future extension, not MVP scope |
-| Pretrained ISL dataset / full ISL vocabulary | ❌ — see [Why no pretrained dataset](#why-no-pretrained-dataset) |
+| Pretrained ISL dataset / full ISL vocabulary | ❌ bundled, but ✅ importable — see [Adding a real ISL vocabulary](#adding-a-real-isl-vocabulary) |
 
 ## Architecture
 
@@ -48,14 +48,41 @@ Browser (frontend/)                          Backend (backend/app/)
                                               └───────────────────────────┘
 ```
 
-This differs from the deck's exact architecture diagram in one place,
-deliberately: the deck's "AI MODEL: hand landmarks" step runs in the
-browser (MediaPipe Hands JS) rather than as a server-side OpenCV/MediaPipe
-call. See the top of `backend/app/landmarks.py` for the full reasoning —
-short version: the environment this was built in has no network access to
-fetch model weights and an incomplete MediaPipe Python install, and
-keeping raw video on-device is a genuine privacy win anyway (see
-`data-docs/consent.md`).
+This differs from the deck's exact architecture diagram in one place: the
+deck's "AI MODEL: hand landmarks" step defaults to running in the browser
+(MediaPipe Hands JS) rather than as a server-side OpenCV/MediaPipe call.
+Keeping raw video on-device by default is a genuine privacy win (see
+`data-docs/consent.md`). **Both `/api/enroll` and `/api/predict` also
+accept a server-side mode** — send `{"image": "data:..."}` instead of
+`{"hands": [...]}` — which runs real detection on the backend via
+MediaPipe's Tasks API (`HandLandmarkExtractor` in `backend/app/landmarks.py`).
+The frontend's "Detect hands on the server" checkbox switches to this
+mode, and falls back to it automatically if the browser can't load the
+MediaPipe Hands JS library. Server-side detection needs the backend
+machine to have normal internet access once, to download and cache a
+small model file — the sandbox this project was originally developed in
+specifically couldn't (confirmed via a direct network test), so that path
+is implemented and unit-tested for its error handling but not exercised
+end-to-end there. On a normal machine it just works; see
+`/api/capabilities` and the error message you'd get otherwise.
+
+### Adding a real ISL vocabulary
+
+There's no pretrained ISL vocabulary bundled in this repo (see
+[Why no pretrained dataset](#why-no-pretrained-dataset)), but you don't
+have to enroll signs one at a time through the browser either. Once you
+have a licensed or self-recorded dataset of labeled sign clips/images,
+run:
+
+```bash
+python ml-model/import_dataset.py /path/to/dataset_dir
+```
+
+This bulk-populates `backend/data/classifier_state.json` (the same file
+the live app reads) using the server-side detection path above. See
+`ml-model/README.md` and `data-docs/dataset-notes.md` (which also lists
+candidate public ISL datasets to look into, with licensing caveats) for
+details.
 
 ## How recognition works
 

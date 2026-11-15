@@ -5,9 +5,15 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Enrolled sign data and feedback are personal/biometric-adjacent data
-# generated at runtime -- never commit them (see /data-docs/consent.md).
+# A user's own live enrollments and feedback are personal/biometric-
+# adjacent data generated at runtime -- never commit them
+# (see /data-docs/consent.md).
 backend/data/*.json
+# ...except the shipped library: it's built offline from a licensed/public
+# dataset via ml-model/import_dataset.py, not from anyone using the app,
+# so it's meant to be committed and distributed with the repo. See
+# backend/app/storage.py's module docstring.
+!backend/data/library.json
 
 # Downloaded MediaPipe model asset (cached on first server-side-detection
 # use; large binary, re-downloadable, never hand-edited) -- see

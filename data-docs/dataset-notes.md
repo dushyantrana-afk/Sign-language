@@ -24,15 +24,24 @@ This is an honest trade-off, not a shortcut:
 
 Two separate upgrades, and it's worth not conflating them:
 
-1. **Bulk-populate the existing per-session KNN model** with a real
-   vocabulary, so the app ships with signs already enrolled instead of
-   needing live enrollment every run. Use `/ml-model/import_dataset.py`:
-   point it at a folder of `<label>/<clip-or-image>` files (from a
-   licensed dataset you've downloaded, or your own consented recordings)
-   and it runs server-side hand-landmark detection on each file and
-   writes the resulting examples straight into
-   `backend/data/classifier_state.json` — the exact file the live app
-   reads. This needs the optional server-side detection path (see
+1. **Bulk-populate the classifier with a real vocabulary**, so the app
+   ships with signs already enrolled instead of needing live enrollment
+   every run. Use `/ml-model/import_dataset.py`: point it at a folder of
+   `<label>/<clip-or-image>` files (from a licensed dataset you've
+   downloaded, or your own consented recordings) and it runs server-side
+   hand-landmark detection on each file and writes the resulting examples
+   into `backend/data/library.json` — a separate file from a user's own
+   live enrollments (`classifier_state.json`), **on purpose**: see
+   `backend/app/storage.py`'s module docstring. The app merges both at
+   startup, but only `library.json` is meant to be committed to git and
+   shipped — it's derived from dataset recordings, not from anyone using
+   the app, so it doesn't carry the same privacy concerns as a user's own
+   enrollments. Crucially, **only the maintainer running the import script
+   downloads the raw dataset** (often several GB of video); what ships
+   with the repo and what every user's install loads is just the
+   extracted landmark numbers in `library.json` — typically a few MB even
+   for a sizeable vocabulary, since video is discarded after detection.
+   This needs the optional server-side detection path (see
    [Landmark detection: client vs. server](#landmark-detection-client-vs-server)
    below) and, once, outbound internet to fetch the detection model.
 2. **Train a signer-generalizing sequence model** instead of KNN, once
@@ -65,6 +74,15 @@ selected, and keep that record up to date — per `/data-docs/vocabulary.md`
 and the deck's own "document dataset source and consent" requirement.
 **Do not claim an ISL dataset has been secured until one is**, with its
 license checked and recorded in this file.
+
+### Current status (update this section as the team makes progress)
+
+- **INCLUDE** and **ISL-CSLTR** are both confirmed **CC BY 4.0** (free to
+  use with attribution, no access-request process) as of the team's own
+  check in November 2026.
+- *(Fill in once a dataset is actually downloaded and imported: which
+  dataset, which subset/signs, the date, and a link to the commit that
+  added `backend/data/library.json`.)*
 
 ## Landmark detection: client vs. server
 

@@ -4,11 +4,21 @@ instead of enrolling one example at a time through the browser UI.
 
 This is how you actually add an "ISL library" to the app: point this
 script at a folder of real, licensed (or your own, consented) sign
-recordings, and it populates `backend/data/classifier_state.json` with
-real enrolled examples -- the same file the live app reads from. No
-pretrained dataset ships with this repo (see /data-docs/dataset-notes.md
-for why); this script is the tool for adding one yourself once you have
-rights to use one.
+recordings, and it populates `backend/data/library.json` with real
+enrolled examples. The running app loads this file at startup and merges
+it with each user's own live enrollments (see backend/app/storage.py's
+module docstring for why those two layers are kept separate) --
+`library.json` is derived from dataset recordings, not from anyone using
+the app, so unlike a user's own enrollments it's meant to be committed to
+git and shipped with the repo (with attribution to the dataset -- see
+/data-docs/dataset-notes.md). No pretrained dataset ships with this repo
+by default; this script is the tool for adding one yourself once you
+have rights to use one.
+
+IMPORTANT: only the library is downloaded/processed once, by whoever runs
+this script. End users of the deployed app never download the raw
+dataset -- `library.json` holds extracted landmark numbers, not video,
+and is typically a few MB even for a sizeable vocabulary.
 
 It requires the OPTIONAL server-side detection path (HandLandmarkExtractor
 in backend/app/landmarks.py), because there is no browser in the loop for
@@ -37,10 +47,15 @@ upgrade path this does NOT attempt).
 
 Usage:
     python ml-model/import_dataset.py /path/to/dataset_dir \
-        [--classifier-state backend/data/classifier_state.json] \
+        [--classifier-state backend/data/library.json] \
         [--sample-every 5] [--max-frames-per-clip 30] [--fresh]
 
---fresh replaces the existing classifier state instead of appending to it.
+--fresh replaces the existing output file instead of appending to it.
+By default this writes to backend/data/library.json (the SHIPPED,
+committed-to-git vocabulary) -- not classifier_state.json (a live user's
+own gitignored enrollments; see backend/app/storage.py). Only pass
+--classifier-state explicitly if you really want to write somewhere else
+(e.g. a scratch file while testing).
 """
 from __future__ import annotations
 
@@ -126,8 +141,8 @@ def main() -> None:
     parser.add_argument("dataset_dir", help="Folder of <label>/<file> images or video clips")
     parser.add_argument(
         "--classifier-state",
-        default=os.path.join(os.path.dirname(__file__), "..", "backend", "data", "classifier_state.json"),
-        help="Where to write enrolled examples (default: the live app's own data file)",
+        default=os.path.join(os.path.dirname(__file__), "..", "backend", "data", "library.json"),
+        help="Where to write enrolled examples (default: the shipped, git-committed library file)",
     )
     parser.add_argument("--sample-every", type=int, default=5, help="Sample every Nth video frame (default 5)")
     parser.add_argument(
@@ -190,6 +205,13 @@ def main() -> None:
         "it is consented (see /data-docs/dataset-notes.md and consent.md) "
         "before using it beyond local testing."
     )
+    if os.path.basename(args.classifier_state) == "library.json":
+        print(
+            "This is the SHIPPED library file -- commit it to git (with the "
+            "dataset's name/license recorded in /data-docs/dataset-notes.md) "
+            "so everyone who clones the repo gets this vocabulary without "
+            "re-running this script or downloading the raw dataset themselves."
+        )
 
 
 if __name__ == "__main__":

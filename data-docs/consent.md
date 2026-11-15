@@ -32,10 +32,17 @@ this codebase:
 
 ## Deletion
 
-- The "Delete all enrolled data" button (`/api/reset`) deletes the entire
-  enrollment store and feedback log from disk. There is intentionally no
-  "delete everything except..." partial mode for this MVP — simplicity
-  here was chosen over granularity, given the small amount of data involved.
+- The "Delete all enrolled data" button (`/api/reset`) deletes *this
+  user's own* enrollment store (`backend/data/classifier_state.json`) and
+  the feedback log from disk.
+- It deliberately does **not** delete `backend/data/library.json` — the
+  shipped, pretrained vocabulary a maintainer built offline from a
+  licensed dataset via `ml-model/import_dataset.py` (see
+  `/data-docs/dataset-notes.md`). That file isn't personal data collected
+  from this app's users, so clearing it out from under everyone using a
+  running instance would be surprising, not protective. A maintainer who
+  genuinely wants to rebuild or clear it can call
+  `storage.reset_library()` directly; it isn't exposed as an API route.
 
 ## What this MVP does **not** yet implement (be upfront about this with users)
 

@@ -68,50 +68,59 @@ end-to-end there. On a normal machine it just works; see
 
 ### Adding a real ISL vocabulary
 
-There's no pretrained ISL vocabulary bundled in this repo (see
-[Why no pretrained dataset](#why-no-pretrained-dataset)), but you don't
-have to enroll signs one at a time through the browser either. Once you
-have a licensed or self-recorded dataset of labeled sign clips/images,
-run:
+No pretrained ISL vocabulary ships in this repo *by default* (see
+[Why no pretrained dataset yet](#why-no-pretrained-dataset-yet)), but you
+don't have to enroll signs one at a time through the browser either, and
+end users never download a raw dataset. Once you have a licensed or
+self-recorded dataset of labeled sign clips/images, run:
 
 ```bash
 python ml-model/import_dataset.py /path/to/dataset_dir
 ```
 
-This bulk-populates `backend/data/classifier_state.json` (the same file
-the live app reads) using the server-side detection path above. See
-`ml-model/README.md` and `data-docs/dataset-notes.md` (which also lists
-candidate public ISL datasets to look into, with licensing caveats) for
-details.
+This bulk-populates `backend/data/library.json` using the server-side
+detection path above. **This file holds extracted landmark numbers, not
+video** — typically a few MB even for a sizeable vocabulary, since the
+raw footage is discarded right after detection. It's a *separate* file
+from a user's own live enrollments (`classifier_state.json`): the app
+merges both at startup, but only `library.json` is meant to be committed
+to git (see `backend/app/storage.py`'s module docstring for why) and
+`/api/reset` never touches it. See `ml-model/README.md` and
+`data-docs/dataset-notes.md` (which lists candidate public ISL datasets
+— INCLUDE and ISL-CSLTR are both confirmed CC BY 4.0, no access request
+needed, as of November 2026) for details.
 
 ## How recognition works
 
-There is **no pretrained sign classifier**. Instead:
-
-1. **Enroll**: on the "Enroll a sign" tab, type a label (e.g. `hello`),
-   show the sign to the camera, and click "Capture example" 3+ times.
-2. Once at least **2 labels have 3+ examples each**, live recognition
-   turns on.
-3. **Recognize**: the "Live recognition" tab sends the current hand
+1. **Library (optional)**: if `backend/data/library.json` exists (built
+   via the importer above), its signs are available the moment the app
+   starts — no enrollment needed for those.
+2. **Enroll (always available)**: on the "Enroll a sign" tab, type a
+   label (e.g. `hello`), show the sign to the camera, and click "Capture
+   example" 3+ times, to add your own signs on top of (or instead of) the
+   library.
+3. Once at least **2 labels (library + your own, combined) have 3+
+   examples each**, live recognition turns on.
+4. **Recognize**: the "Live recognition" tab sends the current hand
    landmarks to the backend roughly once a second; the backend finds the
    nearest enrolled example (K-nearest-neighbors over normalized landmark
-   vectors) and returns a label + confidence.
-4. **Confirm**: if confidence is low, or the gesture doesn't closely match
+   vectors, across both the library and your own enrollments) and returns
+   a label + confidence.
+5. **Confirm**: if confidence is low, or the gesture doesn't closely match
    anything enrolled, the UI asks you to confirm or correct it instead of
    stating the guess as fact — this mirrors the deck's "never silently
    convert uncertain predictions into definitive statements" rule
    (slide 9) and is enforced in `classifier.py`'s `needs_confirmation`
    logic, not just in the UI copy.
 
-### Why no pretrained dataset
+### Why no pretrained dataset yet
 
 The deck requires using "licensed/public datasets only where the license
-permits," with source and consent documented (slide 13). No such
-ISL-specific dataset has been identified and licensed yet. Rather than
-either blocking on that or quietly using something unlicensed, this MVP
-recognizes whatever small vocabulary a user enrolls live — see
-`data-docs/dataset-notes.md` for the full reasoning and the upgrade path
-once real licensed/consented data exists (`ml-model/README.md`).
+permits," with source and consent documented (slide 13), and recording
+that is a deliberate step (see `data-docs/dataset-notes.md`) — so this
+repo doesn't ship `library.json` until the team actually runs the
+importer against a chosen dataset and commits the result. Until then,
+this MVP recognizes whatever small vocabulary a user enrolls live.
 
 ## Running it
 

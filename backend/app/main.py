@@ -48,17 +48,50 @@ _classifier: SignKNNClassifier | None = None
 _server_extractor: HandLandmarkExtractor | None = None
 _server_extractor_error: str | None = None
 
+# The user's own live-enrolled examples, kept separately in memory so only
+# THIS layer (not the shipped library) ever gets written back to
+# classifier_state.json or cleared by /api/reset. See storage.py's module
+# docstring for why these two layers are split.
+_user_vectors: list[np.ndarray] = []
+_user_labels: list[str] = []
+
 
 def get_classifier() -> SignKNNClassifier:
-    global _classifier
-    if _classifier is None:
-        state = storage.load_classifier_state()
-        _classifier = SignKNNClassifier.from_state(state)
+    """Build the classifier from the shipped library (if any) plus this
+    user's own enrollments, merged. Loaded once per process; enroll()
+    keeps it in sync incrementally rather than reloading from disk."""
+    global _classifier, _user_vectors, _user_labels
+    if _classifier is not None:
+        return _classifier
+
+    clf = SignKNNClassifier()
+
+    library_state = storage.load_library_state()
+    for vec, label in zip(library_state.get("vectors", []), library_state.get("labels", [])):
+        clf.add_example(np.array(vec, dtype=np.float64), label)
+
+    user_state = storage.load_classifier_state()
+    _user_vectors = [np.array(v, dtype=np.float64) for v in user_state.get("vectors", [])]
+    _user_labels = list(user_state.get("labels", []))
+    for vec, label in zip(_user_vectors, _user_labels):
+        clf.add_example(vec, label)
+
+    clf.fit()
+    _classifier = clf
     return _classifier
 
 
-def persist_classifier() -> None:
-    storage.save_classifier_state(get_classifier().to_state())
+def add_user_example(vector: np.ndarray, label: str) -> None:
+    """Add one live-enrolled example to both the in-memory classifier and
+    the persisted user layer (never the shipped library)."""
+    clf = get_classifier()
+    clf.add_example(vector, label)
+    clf.fit()
+    _user_vectors.append(vector)
+    _user_labels.append(label)
+    storage.save_classifier_state(
+        {"vectors": [v.tolist() for v in _user_vectors], "labels": list(_user_labels)}
+    )
 
 
 def get_server_extractor() -> HandLandmarkExtractor:
@@ -165,10 +198,12 @@ def capabilities():
 def get_vocabulary():
     clf = get_classifier()
     counts = clf.label_counts()
+    library_labels = sorted(set(storage.load_library_state().get("labels", [])))
     return jsonify(
         {
             "labels": sorted(counts.keys()),
             "example_counts": counts,
+            "library_labels": library_labels,
             "ready_for_recognition": clf.is_trainable(),
         }
     )
@@ -199,10 +234,8 @@ def enroll():
     if vector is None:
         return jsonify({"error": "no_hand_detected"}), 422
 
+    add_user_example(vector, label)
     clf = get_classifier()
-    clf.add_example(vector, label)
-    clf.fit()
-    persist_classifier()
 
     counts = clf.label_counts()
     return jsonify(
@@ -296,11 +329,19 @@ def feedback():
 
 @app.post("/api/reset")
 def reset():
-    """Delete all enrolled signs and feedback (data minimization / demo reset)."""
-    global _classifier
+    """Delete this user's own enrolled signs and feedback (data
+    minimization / demo reset). Deliberately does NOT touch the shipped
+    library (storage.load_library_state()) -- that's a maintainer-rebuilt
+    asset, not personal data, and clearing it out from under every user
+    of a running instance via this button would be surprising. A
+    maintainer who really wants to wipe the library too can call
+    storage.reset_library() directly; it's not exposed here."""
+    global _classifier, _user_vectors, _user_labels
     storage.reset_all()
     _classifier = None
-    return jsonify({"reset": True})
+    _user_vectors = []
+    _user_labels = []
+    return jsonify({"reset": True, "library_preserved": True})
 
 
 # ---- Static frontend (single-command demo: `python -m backend.app.main`) ----
